@@ -35,6 +35,23 @@ logger = logging.getLogger(__name__)
 # fast fall-back to the SWIG/file backend instead of an apparent freeze.
 IPC_CONNECT_TIMEOUT_S = float(os.getenv("KICAD_IPC_CONNECT_TIMEOUT", "5"))
 
+
+def api_socket_from_env() -> Optional[str]:
+    """``KICAD_API_SOCKET`` as a kipy socket URL, or None when it is unset or empty.
+
+    KiCad sets the variable for the plugins it starts, and setups that run
+    KiCad with its own runtime folder set it for other clients. A bare path
+    gets the ``ipc://`` scheme kipy expects; a value with a scheme (or a
+    Windows named pipe) is passed on unchanged.
+    """
+    value = os.environ.get("KICAD_API_SOCKET", "").strip()
+    if not value:
+        return None
+    if "://" in value or value.startswith("\\\\"):
+        return value
+    return f"ipc://{value}"
+
+
 # Unit conversion constant: KiCAD IPC uses nanometers internally
 MM_TO_NM = 1_000_000
 INCH_TO_NM = 25_400_000
@@ -145,8 +162,12 @@ class IPCBackend(KiCADBackend):
         Connect to running KiCAD instance via IPC.
 
         Args:
-            socket_path: Optional socket path. If not provided, will try common locations.
-                        Use format: ipc:///tmp/kicad/api.sock
+            socket_path: Optional socket path. If not provided, KICAD_API_SOCKET
+                        is used when set (the variable KiCad itself sets for
+                        the plugins it starts, and kipy's own default);
+                        otherwise the common locations are tried.
+                        Use format: ipc:///tmp/kicad/api.sock (a bare path is
+                        accepted for KICAD_API_SOCKET).
 
         Returns:
             True if connection successful
@@ -161,9 +182,14 @@ class IPCBackend(KiCADBackend):
             logger.info("Connecting to KiCAD via IPC...")
 
             # Try to connect with provided path or auto-detect
-            socket_paths_to_try = []
+            socket_paths_to_try: List[Optional[str]] = []
+            env_socket = api_socket_from_env()
             if socket_path:
                 socket_paths_to_try.append(socket_path)
+            elif env_socket:
+                # An explicit socket is the only one to try: falling back to
+                # /tmp/kicad/api.sock could reach another KiCad instance.
+                socket_paths_to_try.append(env_socket)
             else:
                 # Common socket locations (Unix-like systems only)
                 # Windows uses named pipes, handled by auto-detect
@@ -228,7 +254,15 @@ class IPCBackend(KiCADBackend):
 
         def worker() -> None:
             try:
-                kicad = KiCad(socket_path=path) if path else KiCad()
+                kwargs: Dict[str, Any] = {}
+                if path:
+                    kwargs["socket_path"] = path
+                token = os.environ.get("KICAD_API_TOKEN", "").strip()
+                if token:
+                    # kipy reads KICAD_API_TOKEN itself; passing it makes the
+                    # dependency explicit and independent of kipy's default.
+                    kwargs["kicad_token"] = token
+                kicad = KiCad(**kwargs)
                 kicad.ping()  # returns None on success, raises on failure
                 result["kicad"] = kicad
             except Exception as e:  # noqa: BLE001 — surfaced to caller below
