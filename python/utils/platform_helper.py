@@ -253,9 +253,15 @@ class PlatformHelper:
         """
         Get appropriate log directory for current platform
 
+        ``$KICAD_MCP_LOG_DIR`` wins when it is set, as in kicad_interface.py.
+
         Returns:
             Path to log directory
         """
+        if os.environ.get("KICAD_MCP_LOG_DIR", "").strip():
+            from utils.mcp_paths import mcp_log_dir
+
+            return mcp_log_dir()
         config_dir = PlatformHelper.get_config_dir()
         return config_dir / "logs"
 
