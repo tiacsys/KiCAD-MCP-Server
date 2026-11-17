@@ -85,6 +85,29 @@ class TestOverrides:
         assert PlatformHelper.get_log_dir() == tmp_path / "logs"
 
 
+class TestPlatformConfigDir:
+    """get_config_dir() on Windows and unknown platforms is the server's home folder."""
+
+    def _platform(self, monkeypatch, name):
+        for check in ("is_windows", "is_linux", "is_macos"):
+            monkeypatch.setattr(
+                PlatformHelper, check, staticmethod(lambda c=check: c == f"is_{name}")
+            )
+
+    @pytest.mark.parametrize("name", ["windows", "unknown"])
+    def test_default(self, home, monkeypatch, name):
+        self._platform(monkeypatch, name)
+        assert PlatformHelper.get_config_dir() == home / ".kicad-mcp"
+
+    @pytest.mark.parametrize("name", ["windows", "unknown"])
+    def test_follows_mcp_home(self, home, tmp_path, monkeypatch, name):
+        self._platform(monkeypatch, name)
+        monkeypatch.setenv("KICAD_MCP_HOME", str(tmp_path / "mcp"))
+        assert PlatformHelper.get_config_dir() == tmp_path / "mcp"
+        assert PlatformHelper.get_cache_dir() == tmp_path / "mcp" / "cache"
+        assert PlatformHelper.get_data_dir() == tmp_path / "mcp" / "data"
+
+
 class TestFreeroutingUsesTheResolvedJar:
     def test_check_freerouting_looks_under_mcp_home(self, home, tmp_path, monkeypatch):
         """check_freerouting resolves the default per call, not at import."""

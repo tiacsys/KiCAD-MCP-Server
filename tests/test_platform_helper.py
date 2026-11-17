@@ -48,6 +48,18 @@ class TestPlatformDetection:
 class TestPathGeneration:
     """Test path generation functions"""
 
+    @pytest.fixture(autouse=True)
+    def _folders_in_tmp(self, tmp_path, monkeypatch):
+        """ensure_directories() creates real folders: keep them out of the home directory."""
+        monkeypatch.setenv("KICAD_MCP_HOME", str(tmp_path / "kicad-mcp"))
+        monkeypatch.delenv("KICAD_MCP_LOG_DIR", raising=False)
+        for var, sub in (
+            ("XDG_CONFIG_HOME", "config"),
+            ("XDG_CACHE_HOME", "cache"),
+            ("XDG_DATA_HOME", "data"),
+        ):
+            monkeypatch.setenv(var, str(tmp_path / sub))
+
     def test_config_dir_exists_after_ensure(self):
         """Test that config directory is created"""
         PlatformHelper.ensure_directories()

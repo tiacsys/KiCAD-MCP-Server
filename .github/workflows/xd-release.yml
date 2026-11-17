@@ -3,62 +3,107 @@ name: xd Release
 # Publishes the release asset of the tiacsys build for a tag v<upstream>-xd.<n> on xd/main
 # (e.g. v2.9.0-xd.1): kicad-mcp-server-<version>.tar.gz and SHA256SUMS, built by
 # xd/build-asset.sh. Upstream's release.yml skips these tags.
+#
+# Two jobs: `build` runs npm and the build with a read-only token and no stored credentials;
+# `publish` has the write token, checks out no code and runs only `gh release` on the uploaded
+# files. The tests are not run here: a tag goes on a commit of xd/main, where xd-ci.yml passed.
+# Actions are pinned by commit SHA (version in the comment).
 on:
   push:
     tags: ["v*-xd.*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: xd-release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: "22.23.4" # npm 10.9.9; same as xd-ci.yml
+
 jobs:
-  release:
-    name: Build and publish the asset
+  build:
+    name: Build the asset
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.x
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Check the tag
         id: tag
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          tag="$GITHUB_REF_NAME"
-          version="${tag#v}"
-          commit=$(git rev-parse "$tag^{commit}")
-          if ! git merge-base --is-ancestor "$commit" origin/xd/main; then
-            echo "::error::Tag $tag points at $commit, which is not on xd/main."
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-xd\.[0-9]+$'; then
+            echo "::error::Tag $TAG is not v<x.y.z>-xd.<n>."
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          commit=$(git rev-parse "$TAG^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/xd/main; then
+            echo "::error::Tag $TAG points at $commit, which is not on xd/main."
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build the asset
-        run: xd/build-asset.sh "${{ steps.tag.outputs.version }}" out
+      - name: Build
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: xd/build-asset.sh "$VERSION" out
 
-      - name: Publish the release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: asset
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: asset
+          path: out
+
+      - name: Check the files against SHA256SUMS
+        run: cd out && sha256sum -c SHA256SUMS
+
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME exists; uploading the files again (--clobber)."
-            gh release upload "$GITHUB_REF_NAME" out/*.tar.gz out/SHA256SUMS --clobber
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists; uploading the files again (--clobber)."
+            gh release upload "$TAG" out/*.tar.gz out/SHA256SUMS --clobber
             exit 0
           fi
-          upstream="${GITHUB_REF_NAME%%-xd.*}"
-          cat > notes.md <<NOTES
-          tiacsys build of mixelpixx/KiCAD-MCP-Server ${upstream} plus the patches on branch xd/main
-          (configurable paths, see xd/README.md). MIT, like upstream.
-
-          Asset: built dist/, production node_modules, python/, gui_driver_plugin/, config/,
-          requirements.lock.txt (exact versions with hashes, without pymupdf). Check it against SHA256SUMS.
-          NOTES
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+          upstream="${TAG%%-xd.*}"
+          {
+            echo "tiacsys build of mixelpixx/KiCAD-MCP-Server ${upstream} plus the patches on branch"
+            echo "xd/main (configurable paths, see xd/README.md). MIT, like upstream."
+            echo
+            echo "Asset: built dist/, production node_modules, python/, gui_driver_plugin/, config/,"
+            echo "requirements.lock.txt (exact versions with hashes, without pymupdf)."
+            echo "Check it against SHA256SUMS."
+          } > notes.md
+          gh release create "$TAG" --verify-tag --title "$TAG" \
             --notes-file notes.md --latest=false out/*.tar.gz out/SHA256SUMS

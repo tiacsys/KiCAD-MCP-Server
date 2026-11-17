@@ -473,7 +473,11 @@ if ($script:Results.Errors.Count -gt 0) {
 
 # Check for log files. Since v2.7.0 each server process writes its own file,
 # named kicad_interface-<pid>.log, so report the most recently written one.
-$logDir = "$env:USERPROFILE\.kicad-mcp\logs"
+# KICAD_MCP_LOG_DIR, else KICAD_MCP_HOME\logs, else %USERPROFILE%\.kicad-mcp\logs
+# (the server's own rule, python/utils/mcp_paths.py).
+$logDir = if ($env:KICAD_MCP_LOG_DIR) { $env:KICAD_MCP_LOG_DIR }
+          elseif ($env:KICAD_MCP_HOME) { Join-Path $env:KICAD_MCP_HOME "logs" }
+          else { "$env:USERPROFILE\.kicad-mcp\logs" }
 $latestLog = if (Test-Path $logDir) {
     Get-ChildItem -Path $logDir -Filter "kicad_interface-*.log" -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1

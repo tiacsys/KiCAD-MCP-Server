@@ -4,7 +4,7 @@
 
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { logger } from "./logger.js";
@@ -77,6 +77,25 @@ function applyEnvironmentOverrides(config: Config): Config {
     return config;
   }
   return { ...config, logLevel: envLogLevel };
+}
+
+/**
+ * Apply `logDir` of the config file: it becomes KICAD_MCP_LOG_DIR (as an absolute
+ * path) unless that variable is already set. Going through the environment makes
+ * the Python worker, which inherits it, log into the same folder as the logger.
+ * Messages logged before this runs (e.g. while the config file is read) still go
+ * to the folder the environment named at that time.
+ *
+ * @returns the log folder now in KICAD_MCP_LOG_DIR, or undefined
+ */
+export function applyConfigLogDir(
+  config: Pick<Config, "logDir">,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (config.logDir && !env.KICAD_MCP_LOG_DIR?.trim()) {
+    env.KICAD_MCP_LOG_DIR = resolve(config.logDir);
+  }
+  return env.KICAD_MCP_LOG_DIR?.trim() || undefined;
 }
 
 /**

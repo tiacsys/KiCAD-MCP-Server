@@ -25,7 +25,9 @@ export function resolveLogDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 function expandHome(path: string): string {
-  return path === "~" || path.startsWith("~/") ? join(os.homedir(), path.slice(1)) : path;
+  // "~/" and, as Python's expanduser accepts on Windows, "~\\".
+  if (path === "~") return os.homedir();
+  return path.startsWith("~/") || path.startsWith("~\\") ? join(os.homedir(), path.slice(2)) : path;
 }
 
 /** Parse a non-negative integer env var, or fall back to a default. */
