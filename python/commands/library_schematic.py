@@ -3,6 +3,7 @@ import logging
 
 # Symbol class might not be directly importable in the current version
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,12 @@ class LibraryManager:
     def list_available_libraries(search_paths: Optional[List[str]] = None) -> Dict[str, List[str]]:
         """List all available symbol libraries"""
         if search_paths is None:
+            from utils.user_dirs import map_user_paths
+
+            # Per-user libraries (under KICAD_DOCUMENTS_HOME when it is set,
+            # skipped in strict mode: utils/user_dirs.py)
+            documents = Path.home() / "Documents" / "KiCad"
+
             # Default library paths based on common KiCAD installations
             # This would need to be configured for the specific environment
             search_paths = [
@@ -22,12 +29,15 @@ class LibraryManager:
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",
                 "/usr/share/kicad/symbols/*.kicad_sym",
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
-                os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_sym"),
+                *[str(p) for p in map_user_paths([(documents, "*/symbols/*.kicad_sym")])],
                 # KiCAD 10 per-symbol directory libraries
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
                 "/usr/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
-                os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_symdir/*.kicad_sym"),
+                *[
+                    str(p)
+                    for p in map_user_paths([(documents, "*/symbols/*.kicad_symdir/*.kicad_sym")])
+                ],
             ]
 
         libraries = []

@@ -8,7 +8,7 @@ import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
-import { logger } from "./logger.js";
+import { logger, strictPaths } from "./logger.js";
 import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
 
 // Import tool registration functions
@@ -160,7 +160,8 @@ function findPythonExecutable(scriptPath: string): string {
     const kicadAppPaths = [
       "/Applications/KiCad/KiCad.app",
       "/Applications/KiCAD/KiCad.app", // Alternative capitalization
-      `${process.env.HOME}/Applications/KiCad/KiCad.app`, // User Applications folder
+      // User Applications folder; not in strict mode (KICAD_MCP_STRICT_PATHS)
+      ...(strictPaths() ? [] : [`${process.env.HOME}/Applications/KiCad/KiCad.app`]),
     ];
 
     // Check all KiCAD app locations with all Python versions

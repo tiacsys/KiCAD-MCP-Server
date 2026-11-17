@@ -5181,19 +5181,15 @@ class KiCADInterface(SchematicHandlersMixin):
                 prompt_file.write_text(prompt_text, encoding="utf-8")
                 logger.info(f"Prompt saved: {prompt_file}")
 
-            # Copy current MCP session log into logs/ before snapshotting
-            import platform
+            # Copy current MCP session log into logs/ before snapshotting.
+            # Claude Desktop's log folder (KICAD_MCP_CLIENT_LOG_DIR overrides it);
+            # skipped in strict mode, which reads no other program's files.
+            from utils.user_dirs import client_log_dir
 
-            system = platform.system()
-            if system == "Windows":
-                mcp_log_dir = Path(os.environ.get("APPDATA", "")) / "Claude" / "logs"
-            elif system == "Darwin":
-                mcp_log_dir = Path("~/Library/Logs/Claude").expanduser()
-            else:
-                mcp_log_dir = Path("~/.config/Claude/logs").expanduser()
-            mcp_log_src = mcp_log_dir / "mcp-server-kicad.log"
+            mcp_log_dir = client_log_dir()
+            mcp_log_src = mcp_log_dir / "mcp-server-kicad.log" if mcp_log_dir else None
             mcp_log_dest = None
-            if mcp_log_src.exists():
+            if mcp_log_src is not None and mcp_log_src.exists():
                 with open(mcp_log_src, "r", encoding="utf-8", errors="replace") as f:
                     all_lines = f.readlines()
                 session_start = 0
@@ -6883,6 +6879,17 @@ def main() -> None:
     os.dup2(2, 1)
     # Also redirect Python-level stdout to stderr for the same reason.
     sys.stdout = sys.stderr
+
+    # KICAD_MCP_STRICT_PATHS=1: refuse to start unless every folder that
+    # would otherwise default to the home directory is configured.
+    from utils.user_dirs import check_strict_paths
+
+    strict_problems = check_strict_paths()
+    if strict_problems:
+        message = "KICAD_MCP_STRICT_PATHS is set, but: " + "; ".join(strict_problems)
+        logger.error(message)
+        sys.stderr.write(message + "\n")
+        sys.exit(2)
 
     logger.info("Starting KiCAD interface...")
     interface = KiCADInterface()

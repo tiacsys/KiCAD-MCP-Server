@@ -9,19 +9,32 @@ import * as os from "os";
 // Log levels
 type LogLevel = "error" | "warn" | "info" | "debug";
 
-/**
- * The server's home folder: $KICAD_MCP_HOME, else ~/.kicad-mcp.
- * Same rule as python/utils/mcp_paths.py, so both processes log into one folder.
- */
-export function resolveMcpHome(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.KICAD_MCP_HOME?.trim();
-  return home ? expandHome(home) : join(os.homedir(), ".kicad-mcp");
+/** KICAD_MCP_STRICT_PATHS=1: no default below the home directory (python/utils/user_dirs.py). */
+export function strictPaths(env: NodeJS.ProcessEnv = process.env): boolean {
+  return ["1", "true", "yes", "on"].includes(
+    (env.KICAD_MCP_STRICT_PATHS ?? "").trim().toLowerCase(),
+  );
 }
 
-/** The log folder: $KICAD_MCP_LOG_DIR, else <resolveMcpHome()>/logs. */
-export function resolveLogDir(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * The server's home folder: $KICAD_MCP_HOME, else ~/.kicad-mcp (null in strict mode).
+ * Same rule as python/utils/mcp_paths.py, so both processes log into one folder.
+ */
+export function resolveMcpHome(env: NodeJS.ProcessEnv = process.env): string | null {
+  const home = env.KICAD_MCP_HOME?.trim();
+  if (home) return expandHome(home);
+  return strictPaths(env) ? null : join(os.homedir(), ".kicad-mcp");
+}
+
+/**
+ * The log folder: $KICAD_MCP_LOG_DIR, else <resolveMcpHome()>/logs. Null in strict
+ * mode when neither is set: then the logger writes to stderr only.
+ */
+export function resolveLogDir(env: NodeJS.ProcessEnv = process.env): string | null {
   const dir = env.KICAD_MCP_LOG_DIR?.trim();
-  return dir ? expandHome(dir) : join(resolveMcpHome(env), "logs");
+  if (dir) return expandHome(dir);
+  const home = resolveMcpHome(env);
+  return home === null ? null : join(home, "logs");
 }
 
 function expandHome(path: string): string {
@@ -98,8 +111,8 @@ class Logger {
     }
   }
 
-  /** The folder log files go to now. */
-  getLogDir(): string {
+  /** The folder log files go to now; null: stderr only (strict mode, nothing configured). */
+  getLogDir(): string | null {
     return this.logDir ?? resolveLogDir();
   }
 
@@ -162,6 +175,7 @@ class Logger {
     try {
       // Ensure log directory exists
       const logDir = this.getLogDir();
+      if (logDir === null) return;
       if (!existsSync(logDir)) {
         mkdirSync(logDir, { recursive: true });
       }

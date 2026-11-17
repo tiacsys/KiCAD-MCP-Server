@@ -498,6 +498,7 @@ class FootprintCreator:
     def list_footprint_libraries(self, search_paths: Optional[List[str]] = None) -> Dict[str, Any]:
         """List all .pretty libraries and their footprints."""
         from utils.kicad_roots import kicad_install_roots
+        from utils.user_dirs import map_user_paths
 
         # A later directory replaces an earlier one on a library-name clash, so
         # the list runs oldest KiCad first and per-user libraries last: the newest
@@ -515,8 +516,17 @@ class FootprintCreator:
             ],
             "/usr/share/kicad/footprints",
             "/usr/local/share/kicad/footprints",
-            os.path.expanduser("~/Documents/KiCad/9.0/footprints"),
-            os.path.expanduser("~/Documents/KiCad/10.0/footprints"),
+            # Per-user libraries (under KICAD_DOCUMENTS_HOME when it is set,
+            # skipped in strict mode: utils/user_dirs.py)
+            *[
+                str(p)
+                for p in map_user_paths(
+                    [
+                        (Path.home() / "Documents" / "KiCad", "9.0/footprints"),
+                        (Path.home() / "Documents" / "KiCad", "10.0/footprints"),
+                    ]
+                )
+            ],
         ]
         paths = search_paths or default_paths
         libraries = {}
