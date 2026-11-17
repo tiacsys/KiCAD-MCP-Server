@@ -1,0 +1,17 @@
+# Runtime dependencies of the tiacsys build (xd/main), compiled into
+# ../requirements.lock.txt with hashes:
+#
+#   pip-compile --generate-hashes --allow-unsafe --strip-extras \
+#       --output-file=requirements.lock.txt xd/requirements.in
+#
+# Same as requirements.txt without pymupdf (AGPL-3.0). The code treats pymupdf as
+# optional (utils/swig_compat.py) and renders SVG to PNG with cairosvg instead.
+kicad-python>=0.5.0
+sexpdata>=1.0.2
+kicad-skip>=0.1.0
+Pillow>=9.0.0
+cairosvg>=2.7.0
+colorlog>=6.7.0
+pydantic>=2.5.0
+requests>=2.32.5
+python-dotenv>=1.0.0

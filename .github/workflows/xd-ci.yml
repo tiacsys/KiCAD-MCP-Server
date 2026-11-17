@@ -1,0 +1,61 @@
+name: xd CI
+
+# CI of the tiacsys build (branch xd/main and the pull requests into it). Upstream's ci.yml runs
+# only for main and develop. One leg: the platform the tiacsys workspaces use (Linux, Python 3.14,
+# Node 22), Python dependencies from the hashed lock file (no pymupdf).
+on:
+  push:
+    branches: [xd/main]
+  pull_request:
+    branches: [xd/main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: xd tests (ubuntu-24.04, Python 3.14, Node 22)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # The freerouting suites look for a java executable before they mock the call.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies and build
+        run: |
+          npm ci
+          npm run build
+
+      - name: TypeScript tests
+        run: npm run test:ts
+
+      - name: Install Python dependencies (hashed lock, no pymupdf)
+        run: |
+          python -m pip install --no-deps --require-hashes -r requirements.lock.txt
+          python -m pip install pytest pytest-cov pytest-asyncio pytest-mock
+
+      # HOME points at an empty folder so a test that writes below the home directory shows up.
+      - name: Python tests
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          HOME="$RUNNER_TEMP/home" python -m pytest -q
+          if [ -n "$(ls -A "$RUNNER_TEMP/home")" ]; then
+            echo "::warning::The tests wrote below HOME:"; find "$RUNNER_TEMP/home" | head -50
+          fi
+
+      - name: Build the release asset (dry run)
+        run: xd/build-asset.sh "$(node -p "require('./package.json').version")-xd.0" "$RUNNER_TEMP/asset"
