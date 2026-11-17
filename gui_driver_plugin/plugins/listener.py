@@ -73,7 +73,11 @@ def _token_path() -> Path:
     port = int(os.environ.get("KICAD_GUI_DRIVER_PORT", DEFAULT_PORT))
     plat = sys.platform
     home = Path.home()
-    if plat.startswith("win"):
+    documents = os.environ.get("KICAD_DOCUMENTS_HOME", "").strip()
+    if documents:
+        # KiCad's own documents root, set for KiCad and the MCP server alike.
+        base = Path(documents).expanduser() / ("kicad" if plat.startswith("linux") else "KiCad")
+    elif plat.startswith("win"):
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) / "kicad" if appdata else home / ".kicad"
     elif plat == "darwin":

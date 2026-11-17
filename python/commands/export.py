@@ -681,18 +681,16 @@ class ExportCommands:
         Only lines from the current server session (today's date) are included
         to keep the file focused on the relevant run.
         """
-        import platform
+        from utils.user_dirs import client_log_dir
 
-        # Resolve Claude log path per platform
-        system = platform.system()
-        if system == "Windows":
-            log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
-        elif system == "Darwin":
-            log_dir = os.path.expanduser("~/Library/Logs/Claude")
-        else:
-            log_dir = os.path.expanduser("~/.config/Claude/logs")
+        # Claude Desktop's log folder (KICAD_MCP_CLIENT_LOG_DIR overrides it);
+        # none in strict mode, which reads no other program's files.
+        client_logs = client_log_dir()
+        if client_logs is None:
+            logger.info("[DEV] Not copying the client log: KICAD_MCP_STRICT_PATHS is set")
+            return
 
-        log_src = os.path.join(log_dir, "mcp-server-kicad.log")
+        log_src = os.path.join(str(client_logs), "mcp-server-kicad.log")
         if not os.path.exists(log_src):
             logger.warning(f"[DEV] MCP log not found at: {log_src}")
             return

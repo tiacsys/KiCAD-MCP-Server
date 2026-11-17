@@ -78,8 +78,11 @@ class PlatformHelper:
                 Path("/usr/lib/kicad/lib/python3/dist-packages"),
                 Path("/usr/share/kicad/scripting/plugins"),
                 Path("/usr/local/lib/kicad/lib/python3/dist-packages"),
-                Path.home() / ".local/lib/kicad/lib/python3/dist-packages",
             ]
+            from utils.user_dirs import home_fallbacks_allowed
+
+            if home_fallbacks_allowed():
+                candidates.append(Path.home() / ".local/lib/kicad/lib/python3/dist-packages")
 
             # Also check based on Python version
             py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -108,8 +111,13 @@ class PlatformHelper:
             kicad_app_paths = [
                 Path("/Applications/KiCad/KiCad.app"),
                 Path("/Applications/KiCAD/KiCad.app"),  # Alternative capitalization
-                Path.home() / "Applications" / "KiCad" / "KiCad.app",  # User Applications
             ]
+            from utils.user_dirs import home_fallbacks_allowed
+
+            if home_fallbacks_allowed():  # not in strict mode
+                kicad_app_paths.append(
+                    Path.home() / "Applications" / "KiCad" / "KiCad.app"
+                )  # User Applications
 
             # Check Python framework paths in each KiCAD installation
             for kicad_app in kicad_app_paths:
@@ -167,6 +175,8 @@ class PlatformHelper:
         Returns:
             List of glob patterns for finding .kicad_sym files
         """
+        from utils.user_dirs import home_fallbacks_allowed, map_user_paths
+
         patterns = []
 
         if PlatformHelper.is_windows():
@@ -185,7 +195,12 @@ class PlatformHelper:
             patterns = [
                 "/usr/share/kicad/symbols/*.kicad_sym",
                 "/usr/local/share/kicad/symbols/*.kicad_sym",
-                str(Path.home() / ".local/share/kicad/symbols/*.kicad_sym"),
+                *[
+                    str(p)
+                    for p in map_user_paths(
+                        [(Path.home() / ".local/share/kicad", "symbols/*.kicad_sym")]
+                    )
+                ],
                 # KiCAD 10 per-symbol directory libraries
                 "/usr/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
                 "/usr/local/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
@@ -194,29 +209,53 @@ class PlatformHelper:
             patterns = [
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
                 "/Applications/KiCAD/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
-                str(
-                    Path.home()
-                    / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"
+                *(
+                    [
+                        str(
+                            Path.home()
+                            / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"
+                        )
+                    ]
+                    if home_fallbacks_allowed()  # not in strict mode
+                    else []
                 ),
                 # KiCAD 10 per-symbol directory libraries
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
             ]
 
-        # Add user library paths for all platforms
-        patterns.append(str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_sym"))
-        patterns.append(
-            str(
-                Path.home()
-                / "Documents"
-                / "KiCad"
-                / "*"
-                / "symbols"
-                / "*.kicad_symdir"
-                / "*.kicad_sym"
+        # Add user library paths for all platforms (under KICAD_DOCUMENTS_HOME
+        # when it is set, skipped in strict mode: utils/user_dirs.py)
+        documents = Path.home() / "Documents" / "KiCad"
+        patterns.extend(
+            str(p)
+            for p in map_user_paths(
+                [
+                    (documents, "*/symbols/*.kicad_sym"),
+                    (documents, "*/symbols/*.kicad_symdir/*.kicad_sym"),
+                ]
             )
         )
 
         return patterns
+
+    @staticmethod
+    def _strict_mcp_dir(xdg_var: str, sub: str) -> Optional[Path]:
+        """In strict mode, the folder that replaces a home-directory default.
+
+        ``KICAD_MCP_STRICT_PATHS=1`` (utils/user_dirs.py): an absolute
+        ``$<xdg_var>/kicad-mcp`` when that variable is set, else
+        ``$KICAD_MCP_HOME/<sub>``. None when strict mode is off, so the caller
+        keeps its platform default.
+        """
+        from utils.mcp_paths import mcp_home
+        from utils.user_dirs import strict_paths
+
+        if not strict_paths():
+            return None
+        xdg = os.environ.get(xdg_var, "").strip()
+        if xdg and Path(xdg).expanduser().is_absolute():
+            return Path(xdg).expanduser() / "kicad-mcp"
+        return mcp_home() / sub
 
     @staticmethod
     def get_config_dir() -> Path:
@@ -231,6 +270,9 @@ class PlatformHelper:
         Returns:
             Path to configuration directory
         """
+        strict_dir = PlatformHelper._strict_mcp_dir("XDG_CONFIG_HOME", "config")
+        if strict_dir is not None:
+            return strict_dir
         if PlatformHelper.is_windows():
             # mcp_home(): $KICAD_MCP_HOME, else %USERPROFILE%\.kicad-mcp
             from utils.mcp_paths import mcp_home
@@ -258,12 +300,15 @@ class PlatformHelper:
         """
         Get appropriate log directory for current platform
 
-        ``$KICAD_MCP_LOG_DIR`` wins when it is set, as in kicad_interface.py.
+        ``$KICAD_MCP_LOG_DIR`` wins when it is set, as in kicad_interface.py;
+        in strict mode the folder is always the one kicad_interface.py uses.
 
         Returns:
             Path to log directory
         """
-        if os.environ.get("KICAD_MCP_LOG_DIR", "").strip():
+        from utils.user_dirs import strict_paths
+
+        if os.environ.get("KICAD_MCP_LOG_DIR", "").strip() or strict_paths():
             from utils.mcp_paths import mcp_log_dir
 
             return mcp_log_dir()
@@ -283,6 +328,9 @@ class PlatformHelper:
         Returns:
             Path to cache directory
         """
+        strict_dir = PlatformHelper._strict_mcp_dir("XDG_CACHE_HOME", "cache")
+        if strict_dir is not None:
+            return strict_dir
         if PlatformHelper.is_windows():
             return PlatformHelper.get_config_dir() / "cache"
         elif PlatformHelper.is_linux():
@@ -314,6 +362,9 @@ class PlatformHelper:
         Returns:
             Path to data directory
         """
+        strict_dir = PlatformHelper._strict_mcp_dir("XDG_DATA_HOME", "data")
+        if strict_dir is not None:
+            return strict_dir
         if PlatformHelper.is_windows():
             return PlatformHelper.get_config_dir() / "data"
         elif PlatformHelper.is_linux():
@@ -380,9 +431,18 @@ class PlatformHelper:
         hard-coded ``9.0`` finds nothing on a machine that has only KiCad 10
         (#425).
         """
+        from utils.user_dirs import config_home, home_fallbacks_allowed
+
+        # KiCad reads only $KICAD_CONFIG_HOME/<version> when the variable is
+        # set, so the other roots would only find a configuration KiCad itself
+        # ignores.
+        configured = config_home()
+        if configured is not None:
+            return [configured / version for version in KICAD_CONFIG_VERSIONS]
+        if not home_fallbacks_allowed():
+            return []
         home = Path.home()
         roots = [
-            Path(os.environ["KICAD_CONFIG_HOME"]) if os.environ.get("KICAD_CONFIG_HOME") else None,
             Path(os.environ["APPDATA"]) / "kicad" if os.environ.get("APPDATA") else None,
             home / "AppData" / "Roaming" / "kicad",
             (
@@ -441,11 +501,18 @@ class PlatformHelper:
         if version in versions:
             versions.remove(version)
             versions.insert(0, version)
+        # Documents/KiCad (Windows, macOS) first, then ~/.local/share/kicad
+        # (Linux); under $KICAD_DOCUMENTS_HOME when it is set, nothing in strict
+        # mode (utils/user_dirs.py).
+        from utils.user_dirs import map_user_paths
+
         home = Path.home()
         for ver in versions:
-            for candidate in (
-                home / "Documents" / "KiCad" / ver / "3rdparty",  # Windows, macOS
-                home / ".local" / "share" / "kicad" / ver / "3rdparty",  # Linux
+            for candidate in map_user_paths(
+                [
+                    (home / "Documents" / "KiCad", f"{ver}/3rdparty"),  # Windows, macOS
+                    (home / ".local" / "share" / "kicad", f"{ver}/3rdparty"),  # Linux
+                ]
             ):
                 if candidate.is_dir():
                     return str(candidate)

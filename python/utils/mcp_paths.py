@@ -11,8 +11,12 @@ server from writing there on every start.
 ``src/logger.ts`` resolves the same two variables the same way, so the Node
 server and the Python worker always log into one folder.
 
-This module imports only the standard library: ``kicad_interface`` calls it
-while it sets up logging, before anything else is imported.
+In strict mode (``KICAD_MCP_STRICT_PATHS=1``) neither has a default below the
+home directory; see utils/user_dirs.py.
+
+This module imports only the standard library (and utils.user_dirs, which does
+too): ``kicad_interface`` calls it while it sets up logging, before anything
+else is imported.
 """
 
 import os
@@ -28,14 +32,33 @@ def _env_path(name: str) -> "Path | None":
     return Path(value).expanduser() if value else None
 
 
+class StrictPathError(OSError):
+    """KICAD_MCP_STRICT_PATHS is set and the folder asked for is not configured."""
+
+
 def mcp_home() -> Path:
-    """The server's home folder: ``$KICAD_MCP_HOME``, else ``~/.kicad-mcp``."""
-    return _env_path(MCP_HOME_ENV) or Path.home() / ".kicad-mcp"
+    """The server's home folder: ``$KICAD_MCP_HOME``, else ``~/.kicad-mcp``.
+
+    In strict mode (``KICAD_MCP_STRICT_PATHS=1``, utils/user_dirs.py) there is no
+    default: an unset KICAD_MCP_HOME raises StrictPathError.
+    """
+    configured = _env_path(MCP_HOME_ENV)
+    if configured is not None:
+        return configured
+    if _strict():
+        raise StrictPathError("KICAD_MCP_STRICT_PATHS is set but KICAD_MCP_HOME is not")
+    return Path.home() / ".kicad-mcp"
 
 
 def mcp_log_dir() -> Path:
     """The log folder: ``$KICAD_MCP_LOG_DIR``, else ``<mcp_home()>/logs``."""
     return _env_path(MCP_LOG_DIR_ENV) or mcp_home() / "logs"
+
+
+def _strict() -> bool:
+    from utils.user_dirs import strict_paths
+
+    return strict_paths()
 
 
 def default_freerouting_jar() -> Path:

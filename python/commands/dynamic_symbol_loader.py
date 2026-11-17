@@ -68,7 +68,10 @@ def _symbol_dir_env_fingerprint() -> Tuple:
     computed under — tests monkeypatch KICAD_SYMBOL_DIR per test, and a cache
     key that ignores it serves one test's temp directory to the next.
     """
-    return tuple(os.environ.get(v) for v in _SYMBOL_DIR_ENV_VARS)
+    return tuple(
+        os.environ.get(v)
+        for v in (*_SYMBOL_DIR_ENV_VARS, "KICAD_DOCUMENTS_HOME", "KICAD_MCP_STRICT_PATHS")
+    )
 
 
 class DynamicSymbolLoader:
@@ -121,6 +124,10 @@ class DynamicSymbolLoader:
         except Exception:  # pragma: no cover - defensive; helper is stdlib-only
             root_symbol_dirs = []
 
+        from utils.user_dirs import map_user_paths
+
+        home = Path.home()
+
         possible_paths = root_symbol_dirs + [
             Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("/usr/share/kicad/symbols"),
@@ -128,10 +135,16 @@ class DynamicSymbolLoader:
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
-            Path.home() / ".local" / "share" / "kicad" / "10.0" / "symbols",
-            Path.home() / ".local" / "share" / "kicad" / "9.0" / "symbols",
-            Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty" / "symbols",
-            Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty" / "symbols",
+            # Per-user folders (under KICAD_DOCUMENTS_HOME when it is set,
+            # skipped in strict mode: utils/user_dirs.py)
+            *map_user_paths(
+                [
+                    (home / ".local" / "share" / "kicad", "10.0/symbols"),
+                    (home / ".local" / "share" / "kicad", "9.0/symbols"),
+                    (home / "Documents" / "KiCad", "10.0/3rdparty/symbols"),
+                    (home / "Documents" / "KiCad", "9.0/3rdparty/symbols"),
+                ]
+            ),
         ]
         for env_var in [
             "KICAD10_SYMBOL_DIR",

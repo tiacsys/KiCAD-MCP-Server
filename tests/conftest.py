@@ -72,7 +72,16 @@ def _no_real_kicad_config(monkeypatch):
     """
     if _REAL_KICAD:
         return
-    for var in ("KICAD_CONFIG_HOME", "APPDATA", "XDG_CONFIG_HOME"):
+    # KICAD_DOCUMENTS_HOME and KICAD_MCP_STRICT_PATHS move or switch off the
+    # per-user lookups (utils/user_dirs.py); a shell that sets them for its own
+    # KiCad would otherwise change what every test sees.
+    for var in (
+        "KICAD_CONFIG_HOME",
+        "APPDATA",
+        "XDG_CONFIG_HOME",
+        "KICAD_DOCUMENTS_HOME",
+        "KICAD_MCP_STRICT_PATHS",
+    ):
         monkeypatch.delenv(var, raising=False)
 
 

@@ -58,7 +58,12 @@ def _token_path() -> Path:
     port = int(os.environ.get("KICAD_GUI_DRIVER_PORT", DEFAULT_PORT))
     plat = sys.platform
     home = Path.home()
-    if plat.startswith("win"):
+    documents = os.environ.get("KICAD_DOCUMENTS_HOME", "").strip()
+    if documents:
+        # KiCad's own documents root (set for KiCad and this server alike);
+        # listener._token_path() uses the same rule.
+        base = Path(documents).expanduser() / ("kicad" if plat.startswith("linux") else "KiCad")
+    elif plat.startswith("win"):
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) / "kicad" if appdata else home / ".kicad"
     elif plat == "darwin":
@@ -87,7 +92,8 @@ def _read_token() -> Optional[str]:
 
 # 0.0.2: run_plugin triggers async (no UI-thread block/timeout)
 # 0.0.3: request lines capped before auth; screenshot paths validated
-HELPER_VERSION = "0.0.3"
+# 0.0.4: token file under KICAD_DOCUMENTS_HOME when that is set
+HELPER_VERSION = "0.0.4"
 HELPER_IDENTIFIER = "com_github_rossvonfange_kicad-gui-driver"
 HELPER_VERSION_MARKER = "HELPER_VERSION"
 
@@ -105,6 +111,9 @@ def kicad_plugin_dirs(
     """Per-OS ``<kicad-data>/<ver>/3rdparty/plugins`` dirs, one per KiCad version.
 
     Resolution (args are injectable for tests; defaults are the live OS):
+    * ``KICAD10_3RD_PARTY`` (then 9, 8, unversioned) set: ``<that>/plugins`` only
+    * ``KICAD_DOCUMENTS_HOME`` set: ``$KICAD_DOCUMENTS_HOME/<kicad|KiCad>/<ver>/3rdparty/plugins``
+    * strict mode (``KICAD_MCP_STRICT_PATHS=1``) without either: none
     * Linux   ``~/.local/share/kicad/<ver>/3rdparty/plugins``
     * Windows ``%APPDATA%\\kicad\\<ver>\\3rdparty\\plugins``
     * macOS   ``~/Library/Preferences/kicad/<ver>/3rdparty/plugins``
@@ -115,7 +124,19 @@ def kicad_plugin_dirs(
     platform = platform if platform is not None else sys.platform
     environ = environ if environ is not None else dict(os.environ)
     home = home if home is not None else Path.home()
-    if platform.startswith("win"):
+    for var in ("KICAD10_3RD_PARTY", "KICAD9_3RD_PARTY", "KICAD8_3RD_PARTY", "KICAD_3RD_PARTY"):
+        third_party = environ.get(var, "").strip()
+        if third_party:
+            return [Path(third_party).expanduser() / "plugins"]
+    documents = environ.get("KICAD_DOCUMENTS_HOME", "").strip()
+    strict = environ.get("KICAD_MCP_STRICT_PATHS", "").strip().lower() in ("1", "true", "yes", "on")
+    if documents:
+        base: Optional[Path] = Path(documents).expanduser() / (
+            "kicad" if platform.startswith("linux") else "KiCad"
+        )
+    elif strict:
+        base = None
+    elif platform.startswith("win"):
         appdata = environ.get("APPDATA")
         base = Path(appdata) / "kicad" if appdata else None
     elif platform == "darwin":

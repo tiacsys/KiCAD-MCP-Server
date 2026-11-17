@@ -30,8 +30,12 @@ logger = logging.getLogger("kicad_interface")
 # Default Freerouting JAR location: $FREEROUTING_JAR, else
 # $KICAD_MCP_HOME/freerouting.jar, else ~/.kicad-mcp/freerouting.jar. Resolved per
 # call (default_freerouting_jar()), so a changed environment takes effect; the
-# constant keeps the value at import for code that reads it.
-DEFAULT_FREEROUTING_JAR = str(default_freerouting_jar())
+# constant keeps the value at import for code that reads it (empty in strict
+# mode without KICAD_MCP_HOME).
+try:
+    DEFAULT_FREEROUTING_JAR = str(default_freerouting_jar())
+except OSError:
+    DEFAULT_FREEROUTING_JAR = ""
 
 # Java release a Freerouting 2.x JAR needs when it cannot be read from the JAR itself
 DEFAULT_REQUIRED_JAVA = 21

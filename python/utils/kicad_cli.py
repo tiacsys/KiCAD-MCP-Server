@@ -77,9 +77,12 @@ def _candidate_paths() -> List[Path]:
                 Path("/usr/local/bin") / name,
                 Path("/app/bin") / name,  # Flatpak sandbox
                 Path("/var/lib/flatpak/app/org.kicad.KiCad/current/active/files/bin") / name,
-                Path.home() / ".local" / "bin" / name,
             ]
         )
+        from utils.user_dirs import home_fallbacks_allowed
+
+        if home_fallbacks_allowed():
+            candidates.append(Path.home() / ".local" / "bin" / name)
     return candidates
 
 
