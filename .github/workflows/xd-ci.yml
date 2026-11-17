@@ -1,36 +1,43 @@
 name: xd CI
 
-# CI of the tiacsys build (branch xd/main and the pull requests into it). Upstream's ci.yml runs
-# only for main and develop. One leg: the platform the tiacsys workspaces use (Linux, Python 3.14,
-# Node 22), Python dependencies from the hashed lock file (no pymupdf).
+# CI of the tiacsys build (branch xd/main and the pull requests into it or into stacked xd/*
+# branches). Upstream's ci.yml runs only for main and develop. One leg: the platform the tiacsys
+# workspaces use (Linux, Python 3.14, Node 22), Python dependencies from the hashed lock file (no
+# pymupdf). Actions are pinned by commit SHA (version in the comment).
 on:
   push:
     branches: [xd/main]
   pull_request:
-    branches: [xd/main]
+    branches: [xd/main, "xd/**"]
 
 permissions:
   contents: read
+
+env:
+  NODE_VERSION: "22.23.4" # npm 10.9.9; same as xd-release.yml
+  PYTHON_VERSION: "3.14.10"
 
 jobs:
   test:
     name: xd tests (ubuntu-24.04, Python 3.14, Node 22)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22.x
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       # The freerouting suites look for a java executable before they mock the call.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "21"
@@ -40,22 +47,68 @@ jobs:
           npm ci
           npm run build
 
-      - name: TypeScript tests
-        run: npm run test:ts
-
       - name: Install Python dependencies (hashed lock, no pymupdf)
         run: |
           python -m pip install --no-deps --require-hashes -r requirements.lock.txt
           python -m pip install pytest pytest-cov pytest-asyncio pytest-mock
 
-      # HOME points at an empty folder so a test that writes below the home directory shows up.
-      - name: Python tests
+      # Both suites run with HOME on an empty folder and every folder of the server configured
+      # (KICAD_MCP_HOME, KICAD_MCP_LOG_DIR, XDG_*). Any file below that HOME afterwards is a
+      # regression of the configurable-path patches and fails the job.
+      - name: Set up a fake HOME and the server folders
         run: |
-          mkdir -p "$RUNNER_TEMP/home"
-          HOME="$RUNNER_TEMP/home" python -m pytest -q
-          if [ -n "$(ls -A "$RUNNER_TEMP/home")" ]; then
-            echo "::warning::The tests wrote below HOME:"; find "$RUNNER_TEMP/home" | head -50
+          t="$RUNNER_TEMP"
+          mkdir -p "$t/home"
+          {
+            echo "XD_FAKE_HOME=$t/home"
+            echo "KICAD_MCP_HOME=$t/kicad-mcp"
+            echo "KICAD_MCP_LOG_DIR=$t/kicad-mcp-logs"
+            echo "XDG_CONFIG_HOME=$t/xdg/config"
+            echo "XDG_CACHE_HOME=$t/xdg/cache"
+            echo "XDG_DATA_HOME=$t/xdg/data"
+          } >> "$GITHUB_ENV"
+
+      - name: TypeScript tests
+        # vitest directly: npm itself would write its cache and logs below HOME.
+        run: HOME="$XD_FAKE_HOME" node_modules/.bin/vitest run
+
+      - name: Python tests
+        run: HOME="$XD_FAKE_HOME" python -m pytest -q
+
+      - name: Nothing was written below HOME
+        run: |
+          if [ -n "$(ls -A "$XD_FAKE_HOME")" ]; then
+            echo "::error::The tests wrote below HOME:"
+            find "$XD_FAKE_HOME" | head -50
+            exit 1
           fi
 
-      - name: Build the release asset (dry run)
-        run: xd/build-asset.sh "$(node -p "require('./package.json').version")-xd.0" "$RUNNER_TEMP/asset"
+      - name: The lock file still matches xd/requirements.in
+        run: |
+          python -m pip install pip-tools
+          cp requirements.lock.txt "$RUNNER_TEMP/lock.txt"
+          pip-compile -q --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url \
+            --output-file="$RUNNER_TEMP/lock.txt" xd/requirements.in
+          names() { grep -oE '^[A-Za-z0-9._-]+==' "$1" | sort; }
+          if ! diff <(names requirements.lock.txt) <(names "$RUNNER_TEMP/lock.txt"); then
+            echo "::error::requirements.lock.txt does not match xd/requirements.in; re-run pip-compile (xd/README.md)."
+            exit 1
+          fi
+          if diff <(grep -v '^#' xd/requirements.in | grep -oE '^[A-Za-z0-9._-]+' | tr A-Z a-z | sort) \
+                  <(grep -v -e '^#' -e pymupdf requirements.txt | grep -oE '^[A-Za-z0-9._-]+' | tr A-Z a-z | sort); then
+            :
+          else
+            echo "::error::xd/requirements.in no longer equals requirements.txt without pymupdf."
+            exit 1
+          fi
+
+      # Two builds from clean node_modules must give the same archive (xd/build-asset.sh).
+      - name: Build the release asset twice and compare
+        env:
+          VERSION_SUFFIX: "-xd.0"
+        run: |
+          version="$(node -p "require('./package.json').version")${VERSION_SUFFIX}"
+          xd/build-asset.sh "$version" "$RUNNER_TEMP/asset-a"
+          rm -rf node_modules dist
+          xd/build-asset.sh "$version" "$RUNNER_TEMP/asset-b"
+          diff "$RUNNER_TEMP/asset-a/SHA256SUMS" "$RUNNER_TEMP/asset-b/SHA256SUMS"

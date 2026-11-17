@@ -9,7 +9,13 @@ reads from, the user's home directory).
   publishes `kicad-mcp-server-<version>.tar.gz` and `SHA256SUMS` for them (built by
   `xd/build-asset.sh`).
 - `requirements.lock.txt`: the runtime Python dependencies with hashes, compiled from
-  `xd/requirements.in` (requirements.txt without pymupdf, which is AGPL-3.0).
+  `xd/requirements.in` (requirements.txt without pymupdf, which is AGPL-3.0) with the
+  pip-compile command at the top of that file. `xd-ci.yml` fails when either falls behind.
+- `xd-ci.yml` runs the tests (with an empty fake `HOME`; any write below it fails the job) and
+  builds the asset twice to check that it is reproducible. `xd-release.yml` does not run the
+  tests: tags go only on `xd/main` commits whose CI passed. It builds with a read-only token
+  and no stored credentials, then a separate job with the write token publishes the files.
+- Actions are pinned by commit SHA, Node by exact version (`NODE_VERSION` in both workflows).
 - Every patch is offered upstream. When upstream has them and publishes release assets, the
   workspaces go back to upstream and this fork is archived.
 

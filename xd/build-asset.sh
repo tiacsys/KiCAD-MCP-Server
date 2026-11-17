@@ -17,8 +17,9 @@
 #                          install with pip install --no-deps --require-hashes -r ...
 #   XD-BUILD.json          version, commit, node and npm versions of the build
 #
-# The archive is reproducible for a given commit and node_modules: sorted names, fixed owner,
-# mtime = commit time, gzip without a timestamp. Run from the repository root.
+# The archive is reproducible for a given commit, Node and npm version (pinned in the workflows):
+# sorted names, fixed owner and modes, mtime = commit time, gzip without a timestamp. xd-ci.yml
+# builds it twice and compares. Run from the repository root.
 set -euo pipefail
 
 version="${1:?usage: xd/build-asset.sh <version> <out-dir>}"
@@ -43,7 +44,8 @@ fi
 commit=$(git rev-parse HEAD)
 epoch=$(git log -1 --format=%ct HEAD)
 
-npm ci --no-audit --no-fund
+# --ignore-scripts: no lifecycle script of any dependency runs; the build is plain tsc.
+npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 npm prune --omit=dev --no-audit --no-fund
 
@@ -67,7 +69,7 @@ cat > "$root/XD-BUILD.json" <<EOF
 EOF
 
 mkdir -p "$out"
-tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner \
+tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner --mode='u+rw,go+rX,go-w' \
   --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
   -C "$stage" -cf - "$name" | gzip -n -9 > "$out/${name}.tar.gz"
 (cd "$out" && sha256sum "${name}.tar.gz" > SHA256SUMS)

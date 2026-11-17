@@ -2031,7 +2031,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 Set `KICAD_MCP_DEV=1` to capture MCP session logs for debugging. See CHANGELOG v2.2.3 for details.
 
 **Logging (`~/.kicad-mcp/logs/`):**
-Logs default to `INFO` and the file is size-capped so it can't grow without bound. Tune via the MCP server's environment:
+Logs default to `INFO` and the file is size-capped so it can't grow without bound. The folder moves with `KICAD_MCP_HOME` (the server's own folder, default `~/.kicad-mcp`; also holds the default `freerouting.jar`) or `KICAD_MCP_LOG_DIR` (only the logs, default `$KICAD_MCP_HOME/logs`; wins over `KICAD_MCP_HOME` and over `logDir` in the config file). Tune via the MCP server's environment:
 
 | Variable                            | Default            | Purpose                                                                                          |
 | ----------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |

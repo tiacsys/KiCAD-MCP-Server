@@ -1,7 +1,8 @@
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { applyConfigLogDir } from "../src/config.js";
 import { logger, resolveLogDir, resolveMcpHome } from "../src/logger.js";
 
 // The Node logger's folder follows KICAD_MCP_LOG_DIR, else KICAD_MCP_HOME/logs,
@@ -45,6 +46,28 @@ describe("log folder", () => {
 
   it("expands a leading ~", () => {
     expect(resolveMcpHome({ KICAD_MCP_HOME: "~/mcp" })).toBe(join(homedir(), "mcp"));
+  });
+
+  it("expands a leading ~\\ as well", () => {
+    expect(resolveMcpHome({ KICAD_MCP_HOME: "~\\mcp" })).toBe(join(homedir(), "mcp"));
+  });
+
+  it("applies logDir of the config file as an absolute KICAD_MCP_LOG_DIR", () => {
+    const env: NodeJS.ProcessEnv = {};
+    expect(applyConfigLogDir({ logDir: "rel/logs" }, env)).toBe(resolve("rel/logs"));
+    expect(env.KICAD_MCP_LOG_DIR).toBe(resolve("rel/logs"));
+  });
+
+  it("keeps a KICAD_MCP_LOG_DIR that is already set over logDir of the config file", () => {
+    const env: NodeJS.ProcessEnv = { KICAD_MCP_LOG_DIR: "/env/logs" };
+    expect(applyConfigLogDir({ logDir: "/config/logs" }, env)).toBe("/env/logs");
+    expect(env.KICAD_MCP_LOG_DIR).toBe("/env/logs");
+  });
+
+  it("changes nothing without logDir", () => {
+    const env: NodeJS.ProcessEnv = {};
+    expect(applyConfigLogDir({}, env)).toBeUndefined();
+    expect(env).toEqual({});
   });
 
   it("writes the log file into the folder the environment names", () => {

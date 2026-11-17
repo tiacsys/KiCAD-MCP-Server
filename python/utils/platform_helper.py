@@ -224,7 +224,7 @@ class PlatformHelper:
         Get appropriate configuration directory for current platform
 
         Follows platform conventions:
-        - Windows: %USERPROFILE%\.kicad-mcp
+        - Windows: $KICAD_MCP_HOME or %USERPROFILE%\.kicad-mcp
         - Linux: $XDG_CONFIG_HOME/kicad-mcp or ~/.config/kicad-mcp
         - macOS: ~/Library/Application Support/kicad-mcp
 
@@ -232,7 +232,10 @@ class PlatformHelper:
             Path to configuration directory
         """
         if PlatformHelper.is_windows():
-            return Path.home() / ".kicad-mcp"
+            # mcp_home(): $KICAD_MCP_HOME, else %USERPROFILE%\.kicad-mcp
+            from utils.mcp_paths import mcp_home
+
+            return mcp_home()
         elif PlatformHelper.is_linux():
             # Use XDG Base Directory specification
             xdg_config = os.environ.get("XDG_CONFIG_HOME")
@@ -245,8 +248,10 @@ class PlatformHelper:
         elif PlatformHelper.is_macos():
             return Path.home() / "Library" / "Application Support" / "kicad-mcp"
         else:
-            # Fallback for unknown platforms
-            return Path.home() / ".kicad-mcp"
+            # Fallback for unknown platforms: $KICAD_MCP_HOME, else ~/.kicad-mcp
+            from utils.mcp_paths import mcp_home
+
+            return mcp_home()
 
     @staticmethod
     def get_log_dir() -> Path:
