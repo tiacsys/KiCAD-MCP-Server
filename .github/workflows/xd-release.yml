@@ -1,0 +1,64 @@
+name: xd Release
+
+# Publishes the release asset of the tiacsys build for a tag v<upstream>-xd.<n> on xd/main
+# (e.g. v2.9.0-xd.1): kicad-mcp-server-<version>.tar.gz and SHA256SUMS, built by
+# xd/build-asset.sh. Upstream's release.yml skips these tags.
+on:
+  push:
+    tags: ["v*-xd.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xd-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish the asset
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Check the tag
+        id: tag
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          commit=$(git rev-parse "$tag^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/xd/main; then
+            echo "::error::Tag $tag points at $commit, which is not on xd/main."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build the asset
+        run: xd/build-asset.sh "${{ steps.tag.outputs.version }}" out
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME exists; uploading the files again (--clobber)."
+            gh release upload "$GITHUB_REF_NAME" out/*.tar.gz out/SHA256SUMS --clobber
+            exit 0
+          fi
+          upstream="${GITHUB_REF_NAME%%-xd.*}"
+          cat > notes.md <<NOTES
+          tiacsys build of mixelpixx/KiCAD-MCP-Server ${upstream} plus the patches on branch xd/main
+          (configurable paths, see xd/README.md). MIT, like upstream.
+
+          Asset: built dist/, production node_modules, python/, gui_driver_plugin/, config/,
+          requirements.lock.txt (exact versions with hashes, without pymupdf). Check it against SHA256SUMS.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md --latest=false out/*.tar.gz out/SHA256SUMS
