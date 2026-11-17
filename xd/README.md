@@ -14,3 +14,9 @@ reads from, the user's home directory).
   workspaces go back to upstream and this fork is archived.
 
 Licence: MIT, as upstream (LICENSE unchanged); the patches are MIT too.
+
+## Patches on xd/main
+
+| Patch | Variables | Upstream |
+|---|---|---|
+| Server folder and logs | `KICAD_MCP_HOME` (default `~/.kicad-mcp`), `KICAD_MCP_LOG_DIR` (default `$KICAD_MCP_HOME/logs`); `logDir` of the config file applies | draft, not yet offered |

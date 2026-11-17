@@ -9,8 +9,24 @@ import * as os from "os";
 // Log levels
 type LogLevel = "error" | "warn" | "info" | "debug";
 
-// Default log directory
-const DEFAULT_LOG_DIR = join(os.homedir(), ".kicad-mcp", "logs");
+/**
+ * The server's home folder: $KICAD_MCP_HOME, else ~/.kicad-mcp.
+ * Same rule as python/utils/mcp_paths.py, so both processes log into one folder.
+ */
+export function resolveMcpHome(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.KICAD_MCP_HOME?.trim();
+  return home ? expandHome(home) : join(os.homedir(), ".kicad-mcp");
+}
+
+/** The log folder: $KICAD_MCP_LOG_DIR, else <resolveMcpHome()>/logs. */
+export function resolveLogDir(env: NodeJS.ProcessEnv = process.env): string {
+  const dir = env.KICAD_MCP_LOG_DIR?.trim();
+  return dir ? expandHome(dir) : join(resolveMcpHome(env), "logs");
+}
+
+function expandHome(path: string): string {
+  return path === "~" || path.startsWith("~/") ? join(os.homedir(), path.slice(1)) : path;
+}
 
 /** Parse a non-negative integer env var, or fall back to a default. */
 function envInt(name: string, fallback: number): number {
@@ -25,7 +41,10 @@ function envInt(name: string, fallback: number): number {
  */
 class Logger {
   private logLevel: LogLevel = "info";
-  private logDir: string = DEFAULT_LOG_DIR;
+  // null: resolve from the environment on every write (resolveLogDir), so the
+  // folder follows KICAD_MCP_LOG_DIR / KICAD_MCP_HOME without an import-time
+  // snapshot. setLogDir() fixes it.
+  private logDir: string | null = null;
   // Size cap for the per-day log files (issue #181). Same env knobs as the
   // Python side; KICAD_MCP_LOG_MAX_BYTES=0 disables rotation.
   private maxBytes: number = envInt("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024);
@@ -75,6 +94,11 @@ class Logger {
     if (!existsSync(this.logDir)) {
       mkdirSync(this.logDir, { recursive: true });
     }
+  }
+
+  /** The folder log files go to now. */
+  getLogDir(): string {
+    return this.logDir ?? resolveLogDir();
   }
 
   /**
@@ -135,11 +159,12 @@ class Logger {
     // Log to file
     try {
       // Ensure log directory exists
-      if (!existsSync(this.logDir)) {
-        mkdirSync(this.logDir, { recursive: true });
+      const logDir = this.getLogDir();
+      if (!existsSync(logDir)) {
+        mkdirSync(logDir, { recursive: true });
       }
 
-      const logFile = join(this.logDir, `kicad-mcp-${new Date().toISOString().split("T")[0]}.log`);
+      const logFile = join(logDir, `kicad-mcp-${new Date().toISOString().split("T")[0]}.log`);
       this.rotateIfNeeded(logFile);
       appendFileSync(logFile, formattedMessage + "\n");
     } catch (error) {

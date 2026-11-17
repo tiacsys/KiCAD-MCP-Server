@@ -25,6 +25,13 @@ async function main() {
     // Load configuration
     const config = await loadConfig(options.configPath);
 
+    // A logDir in the config file applies unless KICAD_MCP_LOG_DIR is set. It is
+    // passed on through the environment, so the Python worker (which inherits it)
+    // logs into the same folder.
+    if (config.logDir && !process.env.KICAD_MCP_LOG_DIR?.trim()) {
+      process.env.KICAD_MCP_LOG_DIR = config.logDir;
+    }
+
     // Path to the Python script that interfaces with KiCAD
     const kicadScriptPath = join(dirname(__dirname), "python", "kicad_interface.py");
 

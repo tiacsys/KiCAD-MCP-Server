@@ -26,7 +26,7 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .string()
         .optional()
         .describe(
-          "Path to freerouting.jar (default: ~/.kicad-mcp/freerouting.jar or FREEROUTING_JAR env)",
+          "Path to freerouting.jar (default: FREEROUTING_JAR env, else $KICAD_MCP_HOME/freerouting.jar, else ~/.kicad-mcp/freerouting.jar)",
         ),
       maxPasses: z
         .number()

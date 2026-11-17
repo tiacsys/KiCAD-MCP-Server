@@ -146,11 +146,14 @@ class _TolerantRotatingFileHandler(RotatingFileHandler):
 # Configure logging.
 # The file handler rotates (default 10 MB x 3 backups) so the log can never
 # grow without bound (issue #181); the level honors the environment instead of
-# being hardcoded to DEBUG. If ~/.kicad-mcp/logs isn't writable (sandboxed test
-# envs, restricted CI runners) we fall back to console-only logging so importing
-# this module never crashes.
+# being hardcoded to DEBUG. The folder is $KICAD_MCP_LOG_DIR, else
+# $KICAD_MCP_HOME/logs, else ~/.kicad-mcp/logs (utils/mcp_paths.py). If it isn't
+# writable (sandboxed test envs, restricted CI runners) we fall back to
+# console-only logging so importing this module never crashes.
 try:
-    log_dir = Path.home() / ".kicad-mcp" / "logs"
+    from utils.mcp_paths import mcp_log_dir
+
+    log_dir = mcp_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     # One log file per process (#373): multiple concurrent servers rotating
     # the same file collide on Windows (WinError 32 -- the file is locked by
@@ -336,7 +339,8 @@ Windows Troubleshooting:
    C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages
 3. Test with: "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe" -c "import pcbnew"
 4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface-<pid>.log
-   (one file per server process; open the newest one)
+   (or %KICAD_MCP_LOG_DIR% / %KICAD_MCP_HOME%\\logs when set; one file per
+   server process; open the newest one)
 5. Run setup-windows.ps1 for automatic configuration
 """
         elif sys.platform == "darwin":

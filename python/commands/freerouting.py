@@ -21,16 +21,17 @@ import zipfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from utils.mcp_paths import default_freerouting_jar
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
 from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger("kicad_interface")
 
-# Default Freerouting JAR location
-DEFAULT_FREEROUTING_JAR = os.environ.get(
-    "FREEROUTING_JAR",
-    os.path.join(os.path.expanduser("~"), ".kicad-mcp", "freerouting.jar"),
-)
+# Default Freerouting JAR location: $FREEROUTING_JAR, else
+# $KICAD_MCP_HOME/freerouting.jar, else ~/.kicad-mcp/freerouting.jar. Resolved per
+# call (default_freerouting_jar()), so a changed environment takes effect; the
+# constant keeps the value at import for code that reads it.
+DEFAULT_FREEROUTING_JAR = str(default_freerouting_jar())
 
 # Java release a Freerouting 2.x JAR needs when it cannot be read from the JAR itself
 DEFAULT_REQUIRED_JAVA = 21
@@ -1070,7 +1071,7 @@ class FreeroutingCommands:
                 "errorDetails": ("Provide boardPath or open a project first"),
             }
 
-        jar_path = params.get("freeroutingJar", DEFAULT_FREEROUTING_JAR)
+        jar_path = params.get("freeroutingJar") or str(default_freerouting_jar())
         timeout = params.get("timeout", 300)
         passes = params.get("maxPasses", 20)
 
@@ -1735,7 +1736,7 @@ class FreeroutingCommands:
 
     def check_freerouting(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check if Freerouting and Java/Docker are available."""
-        jar_path = params.get("freeroutingJar", DEFAULT_FREEROUTING_JAR)
+        jar_path = params.get("freeroutingJar") or str(default_freerouting_jar())
 
         # Check local Java against the release the JAR was built for
         required = _jar_required_java(jar_path)
