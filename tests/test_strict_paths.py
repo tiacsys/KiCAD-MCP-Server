@@ -221,6 +221,47 @@ class TestCheckStrictPaths:
             )
         assert check_strict_paths() == []
 
+    def test_dotdot_into_the_desktop_folders_is_caught(self, home, tmp_path, monkeypatch):
+        self._complete(home, tmp_path, monkeypatch)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "proj" / ".." / ".config"))
+        assert any("XDG_CONFIG_HOME" in p for p in check_strict_paths())
+
+    def test_configured_xdg_below_home_used_unconfigured_falls_back_to_mcp_home(
+        self, home, tmp_path, monkeypatch
+    ):
+        """The pair: a configured XDG folder in a project below HOME is accepted and
+        used; without XDG the server's folders go under KICAD_MCP_HOME, never ~/.config."""
+        self._complete(home, tmp_path, monkeypatch)
+        monkeypatch.setattr(PlatformHelper, "is_windows", staticmethod(lambda: False))
+        monkeypatch.setattr(PlatformHelper, "is_linux", staticmethod(lambda: True))
+        project = home / "work" / "ws" / ".xdmod" / "kicad-mcp"
+        for var, sub in (
+            ("XDG_CONFIG_HOME", "config"),
+            ("XDG_CACHE_HOME", "cache"),
+            ("XDG_DATA_HOME", "data"),
+        ):
+            monkeypatch.setenv(var, str(project / sub))
+        assert check_strict_paths() == []
+        assert PlatformHelper.get_config_dir() == project / "config" / "kicad-mcp"
+        assert PlatformHelper.get_cache_dir() == project / "cache" / "kicad-mcp"
+        assert PlatformHelper.get_data_dir() == project / "data" / "kicad-mcp"
+        for var in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
+            monkeypatch.delenv(var)
+        assert check_strict_paths() == []
+        mcp = tmp_path / "m"
+        assert PlatformHelper.get_config_dir() == mcp / "config"
+        assert PlatformHelper.get_cache_dir() == mcp / "cache"
+        assert PlatformHelper.get_data_dir() == mcp / "data"
+        _no_home(
+            [
+                PlatformHelper.get_config_dir(),
+                PlatformHelper.get_cache_dir(),
+                PlatformHelper.get_data_dir(),
+                PlatformHelper.get_log_dir(),
+            ],
+            home,
+        )
+
     def test_mcp_home_has_no_default_in_strict_mode(self, home, monkeypatch):
         _strict(monkeypatch)
         with pytest.raises(StrictPathError):
@@ -444,6 +485,29 @@ def _run_worker(home: Path, code: str, **env: str) -> subprocess.CompletedProces
 
 
 class TestWorkerStrict:
+    def test_starts_with_xdg_in_a_project_below_home(self, tmp_path):
+        """The case that exited with code 2 before: a workspace below HOME that keeps
+        the XDG folders in the project. The strict worker must start (READY)."""
+        home = tmp_path / "home"
+        ws = home / "work" / "ws"
+        conf, docs, mcp = ws / "conf", ws / "docs", ws / "mcp"
+        conf.mkdir(parents=True)
+        docs.mkdir()
+        r = _run_worker(
+            home,
+            "kicad_interface.main()\n",
+            KICAD_MCP_STRICT_PATHS="1",
+            KICAD_CONFIG_HOME=str(conf),
+            KICAD_DOCUMENTS_HOME=str(docs),
+            KICAD_MCP_HOME=str(mcp),
+            XDG_CONFIG_HOME=str(mcp / "config"),
+            XDG_CACHE_HOME=str(mcp / "cache"),
+            XDG_DATA_HOME=str(mcp / "data"),
+        )
+        assert r.returncode == 0, r.stderr[-2000:]
+        assert '"ready"' in r.stdout
+        assert sorted(p.name for p in home.iterdir()) == ["work"]
+
     def test_refuses_to_start_and_writes_nothing(self, tmp_path):
         home = tmp_path / "home"
         home.mkdir()

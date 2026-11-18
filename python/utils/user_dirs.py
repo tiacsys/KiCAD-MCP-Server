@@ -164,6 +164,8 @@ def check_strict_paths() -> List[str]:
     defaults = (home, home / ".config", home / ".cache", home / ".local" / "share", home / ".local")
     for name in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
         path = _env_dir(name)
+        if path is not None:
+            path = Path(os.path.normpath(path))  # "proj/../.config" is ~/.config
         if path is not None and (path in defaults or any(d in path.parents for d in defaults[1:])):
             problems.append(f"{name} points into the user's desktop folders: {path}")
     mcp_home = _env_dir("KICAD_MCP_HOME")
