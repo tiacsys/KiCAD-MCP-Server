@@ -807,10 +807,15 @@ class DesignRuleCommands:
                     self._parse_drc_report(drc_data)
                 )
 
-                # Determine where to save the violations file
-                board_dir = os.path.dirname(board_file)
-                board_name = os.path.splitext(os.path.basename(board_file))[0]
-                violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
+                # Where to save the violations file: next to the board in write
+                # mode, under KICAD_MCP_HOME/reports in readonly and
+                # manufacturing mode (utils/mcp_paths.py), which must leave the
+                # design folder untouched.
+                from utils.mcp_paths import drc_violations_file
+
+                violations_path = drc_violations_file(board_file)
+                violations_path.parent.mkdir(parents=True, exist_ok=True)
+                violations_file = str(violations_path)
 
                 # Always save violations to JSON file (for large result sets)
                 with open(violations_file, "w", encoding="utf-8") as f:
