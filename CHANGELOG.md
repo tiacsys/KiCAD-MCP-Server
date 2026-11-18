@@ -4,6 +4,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- In readonly and manufacturing mode (`KICAD_MCP_OPERATING_MODE`), `run_drc` /
+  `get_drc_violations` write `<board>_drc_violations.json`, and `get_board_2d_view`
+  with `responseMode: "file"` writes its preview, to `$KICAD_MCP_HOME/reports/`
+  (default `~/.kicad-mcp/reports/`) instead of next to the board, named
+  `<board>-<hash of the board path><suffix>`. A `run_drc` `reportPath` outside that
+  folder is moved into it (the result's `warnings` says so). Write mode is unchanged.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt

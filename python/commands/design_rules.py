@@ -835,7 +835,14 @@ class DesignRuleCommands:
 
                 # Save text report if requested
                 if report_path:
-                    report_path = os.path.abspath(os.path.expanduser(report_path))
+                    # readonly / manufacturing: only inside KICAD_MCP_HOME/reports
+                    # (a caller-given path could name the board itself)
+                    from utils.mcp_paths import confine_report_path
+
+                    report_path, note = confine_report_path(report_path)
+                    if note:
+                        warnings.append(note)
+                    os.makedirs(os.path.dirname(report_path), exist_ok=True)
                     cmd_report = [
                         kicad_cli,
                         "pcb",

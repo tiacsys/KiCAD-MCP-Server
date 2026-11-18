@@ -86,3 +86,65 @@ def test_write_mode_run_drc_unchanged(tmp_path, mcp_home, monkeypatch):
     res = cmds.run_drc({})
     assert Path(res["violationsFile"]) == board_file.parent / "b_drc_violations.json"
     assert not (mcp_home / "reports").exists()
+
+
+# --- a caller-given reportPath ------------------------------------------------
+
+
+def test_readonly_report_path_cannot_overwrite_the_board(tmp_path, mcp_home, monkeypatch):
+    """A reportPath that names the board itself is moved into the reports folder."""
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "readonly")
+    runs = []
+    cmds, board_file = _commands(tmp_path, monkeypatch, KICAD10_HELP, runs)
+    res = cmds.run_drc({"reportPath": str(board_file)})
+    assert res["success"], res
+    assert board_file.read_text() == "(kicad_pcb)"
+    report_run = [c for c in runs if "report" in c][0]
+    out = Path(report_run[report_run.index("--output") + 1])
+    assert out == mcp_home.resolve() / "reports" / "b.kicad_pcb"
+    assert res["reportPath"] == str(out)
+    assert any("readonly mode" in w for w in res["warnings"]), res["warnings"]
+
+
+def test_readonly_report_path_inside_reports_is_kept(tmp_path, mcp_home, monkeypatch):
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "manufacturing")
+    runs = []
+    cmds, _ = _commands(tmp_path, monkeypatch, KICAD10_HELP, runs)
+    wanted = mcp_home / "reports" / "sub" / "drc.rpt"
+    res = cmds.run_drc({"reportPath": str(wanted)})
+    assert res["reportPath"] == str(wanted.resolve()) and res["warnings"] == []
+
+
+def test_write_mode_report_path_unchanged(tmp_path, mcp_home, monkeypatch):
+    runs = []
+    cmds, _ = _commands(tmp_path, monkeypatch, KICAD10_HELP, runs)
+    wanted = tmp_path / "out" / "drc.rpt"
+    res = cmds.run_drc({"reportPath": str(wanted)})
+    assert res["reportPath"] == str(wanted.resolve())
+
+
+# --- get_board_2d_view responseMode=file ---------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["readonly", "write"])
+def test_board_2d_view_file(tmp_path, mcp_home, monkeypatch, mode):
+    from unittest.mock import patch
+
+    from test_get_board_2d_view_save_to_file import _FAKE_PNG, _make_view_cmd, _patch_kicad_cli
+
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", mode)
+    svg_dir = tmp_path / "svg"
+    svg_dir.mkdir()
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(svg_dir)
+    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+        res = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "png", "responseMode": "file"}
+        )
+    out = Path(res["filePath"])
+    assert out.read_bytes() == _FAKE_PNG
+    if mode == "write":
+        assert out == root / "MyBoard_2d_view.png"
+    else:
+        assert out.parent == mcp_home / "reports"
+        assert not (root / "MyBoard_2d_view.png").exists()
