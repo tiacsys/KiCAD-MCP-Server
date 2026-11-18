@@ -252,9 +252,6 @@ class BoardViewCommands:
                 svg_path = svg_files[0]
 
                 # --- Render to bytes (shared for both response modes) ---
-                board_dir = os.path.dirname(pcb_path)
-                board_name = os.path.splitext(os.path.basename(pcb_path))[0]
-
                 if fmt == "svg":
                     with open(svg_path, "rb") as f:
                         image_bytes = f.read()
@@ -281,7 +278,13 @@ class BoardViewCommands:
 
                 # --- Package response according to responseMode ---
                 if response_mode == "file":
-                    output_path = os.path.join(board_dir, f"{board_name}_2d_view.{mime_format}")
+                    # Next to the board in write mode; under KICAD_MCP_HOME/reports
+                    # in readonly and manufacturing mode (utils/mcp_paths.py).
+                    from utils.mcp_paths import design_output_file
+
+                    output = design_output_file(pcb_path, f"_2d_view.{mime_format}")
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output_path = str(output)
                     with open(output_path, "wb") as f:
                         f.write(image_bytes)
                     return {

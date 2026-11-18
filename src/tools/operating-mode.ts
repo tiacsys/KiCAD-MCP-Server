@@ -93,8 +93,10 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "search_parts_registry",
   "search_symbols",
   "suggest_jlcpcb_alternatives",
-  // Board inspection. run_drc and get_drc_violations write a JSON report next
-  // to the board; get_board_2d_view can write a preview image there.
+  // Board inspection. run_drc and get_drc_violations write a JSON report and
+  // get_board_2d_view can write a preview image: next to the board in write
+  // mode, under $KICAD_MCP_HOME/reports in readonly and manufacturing mode
+  // (python/utils/mcp_paths.py design_output_file), as is a run_drc reportPath.
   "check_clearance",
   "audit_via_nets",
   "check_courtyard_overlaps",

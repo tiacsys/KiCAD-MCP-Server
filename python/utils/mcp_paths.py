@@ -90,19 +90,45 @@ def report_dir() -> Path:
     return mcp_home() / "reports"
 
 
-def drc_violations_file(board_file: str) -> Path:
-    """The JSON file run_drc writes its full violation list to.
+def design_output_file(board_file: str, suffix: str) -> Path:
+    """Where a tool writes a generated file about a board (report, preview).
 
-    In write mode, ``<board dir>/<board>_drc_violations.json`` as before. In
-    readonly and manufacturing mode a session must not change the design folder,
-    so the file goes to ``report_dir()``, named after the board plus a short hash
-    of its full path (two boards of the same name do not overwrite each other).
+    In write mode ``<board dir>/<board><suffix>``, as the tools always did. In
+    readonly and manufacturing mode a session must not change the design
+    folder, so the file goes to ``report_dir()``, named after the board plus a
+    short hash of its full path (two boards of the same name do not overwrite
+    each other).
     """
     import hashlib
 
     board = Path(board_file)
-    name = f"{board.stem}_drc_violations.json"
     if operating_mode() == "write":
-        return board.parent / name
+        return board.parent / f"{board.stem}{suffix}"
     digest = hashlib.sha256(str(board.resolve()).encode("utf-8")).hexdigest()[:12]
-    return report_dir() / f"{board.stem}-{digest}_drc_violations.json"
+    return report_dir() / f"{board.stem}-{digest}{suffix}"
+
+
+def drc_violations_file(board_file: str) -> Path:
+    """The JSON file run_drc writes its full violation list to (design_output_file)."""
+    return design_output_file(board_file, "_drc_violations.json")
+
+
+def confine_report_path(requested: str) -> "tuple[str, str | None]":
+    """A caller-given output path, kept inside report_dir() unless in write mode.
+
+    Returns (path, note). In write mode the path is used as given. In readonly
+    and manufacturing mode a path outside ``report_dir()`` (it could name the
+    board itself) is replaced by ``report_dir()/<its file name>``, and the note
+    says so.
+    """
+    path = Path(requested).expanduser().resolve()
+    if operating_mode() == "write":
+        return str(path), None
+    reports = report_dir().resolve()
+    if path == reports or reports in path.parents:
+        return str(path), None
+    confined = reports / path.name
+    return str(confined), (
+        f"{operating_mode()} mode: the report was written to {confined} instead of "
+        f"{requested}, because this mode does not write outside {reports}"
+    )
