@@ -139,11 +139,13 @@ def check_strict_paths() -> List[str]:
     Strict mode needs ``KICAD_CONFIG_HOME`` and ``KICAD_DOCUMENTS_HOME`` as
     existing absolute folders and ``KICAD_MCP_HOME`` as an absolute path (it is
     created when missing), so that nothing defaults to the home directory. An
-    ``XDG_*_HOME`` that points below the home directory (inherited from a
-    desktop session) counts as a problem too: the server's own folders follow
-    it. Strict mode covers the server's lookups; child processes (kicad-cli,
-    Java for Freerouting) get the environment as it is, so a strict setup
-    should give them a HOME of its own as well.
+    ``XDG_*_HOME`` that points into the user's desktop folders (``$HOME``
+    itself, ``~/.config``, ``~/.cache``, ``~/.local`` and below; inherited from a
+    desktop session) counts as a problem too, because the server's own folders
+    follow it. A project folder elsewhere below ``$HOME`` is fine. Strict mode
+    covers the server's lookups; child processes (kicad-cli, Java for
+    Freerouting) get the environment as it is, so a strict setup should give
+    them a HOME of its own as well.
     """
     if not strict_paths():
         return []
@@ -157,10 +159,13 @@ def check_strict_paths() -> List[str]:
         elif not path.is_dir():
             problems.append(f"{name} does not exist: {path}")
     home = Path.home()
+    # The desktop defaults (and $HOME itself), not any folder below $HOME: a
+    # workspace that keeps its tool folders inside a project below $HOME is fine.
+    defaults = (home, home / ".config", home / ".cache", home / ".local" / "share", home / ".local")
     for name in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
         path = _env_dir(name)
-        if path is not None and (path == home or home in path.parents):
-            problems.append(f"{name} is below the home directory: {path}")
+        if path is not None and (path in defaults or any(d in path.parents for d in defaults[1:])):
+            problems.append(f"{name} points into the user's desktop folders: {path}")
     mcp_home = _env_dir("KICAD_MCP_HOME")
     if mcp_home is None:
         problems.append("KICAD_MCP_HOME is not set")

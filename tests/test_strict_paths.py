@@ -198,6 +198,29 @@ class TestCheckStrictPaths:
         assert any("not an absolute path" in p for p in problems)
         assert any("does not exist" in p for p in problems)
 
+    def _complete(self, home, tmp_path, monkeypatch):
+        _strict(monkeypatch)
+        for var, sub in (("KICAD_CONFIG_HOME", "c"), ("KICAD_DOCUMENTS_HOME", "d")):
+            (tmp_path / sub).mkdir()
+            monkeypatch.setenv(var, str(tmp_path / sub))
+        monkeypatch.setenv("KICAD_MCP_HOME", str(tmp_path / "m"))
+
+    @pytest.mark.parametrize("rel", [".config", ".cache/x", ".local/share", ""])
+    def test_xdg_in_the_desktop_folders_is_a_problem(self, home, tmp_path, monkeypatch, rel):
+        self._complete(home, tmp_path, monkeypatch)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(home / rel) if rel else str(home))
+        problems = check_strict_paths()
+        assert len(problems) == 1 and "XDG_CONFIG_HOME" in problems[0], problems
+
+    def test_xdg_in_a_project_below_home_is_fine(self, home, tmp_path, monkeypatch):
+        """A workspace below $HOME keeps its tool folders there (found in the tiacsys doctor run)."""
+        self._complete(home, tmp_path, monkeypatch)
+        for var in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
+            monkeypatch.setenv(
+                var, str(home / "work" / "ws" / ".xdmod" / "kicad-mcp" / var.lower())
+            )
+        assert check_strict_paths() == []
+
     def test_mcp_home_has_no_default_in_strict_mode(self, home, monkeypatch):
         _strict(monkeypatch)
         with pytest.raises(StrictPathError):
