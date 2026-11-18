@@ -67,3 +67,42 @@ def default_freerouting_jar() -> Path:
     ``$FREEROUTING_JAR``, else ``<mcp_home()>/freerouting.jar``.
     """
     return _env_path("FREEROUTING_JAR") or mcp_home() / "freerouting.jar"
+
+
+def operating_mode() -> str:
+    """``KICAD_MCP_OPERATING_MODE`` as src/tools/operating-mode.ts reads it.
+
+    Unset or empty: ``write``; ``-``, ``_``, blanks and case are ignored; an
+    unknown value fails closed to ``readonly``.
+    """
+    raw = os.environ.get("KICAD_MCP_OPERATING_MODE", "").strip()
+    if not raw:
+        return "write"
+    value = raw.lower().replace("-", "").replace("_", "").replace(" ", "")
+    return value if value in ("write", "readonly", "manufacturing") else "readonly"
+
+
+def report_dir() -> Path:
+    """Where generated reports go when the design folder must stay untouched.
+
+    ``<mcp_home()>/reports``; created on demand by the caller.
+    """
+    return mcp_home() / "reports"
+
+
+def drc_violations_file(board_file: str) -> Path:
+    """The JSON file run_drc writes its full violation list to.
+
+    In write mode, ``<board dir>/<board>_drc_violations.json`` as before. In
+    readonly and manufacturing mode a session must not change the design folder,
+    so the file goes to ``report_dir()``, named after the board plus a short hash
+    of its full path (two boards of the same name do not overwrite each other).
+    """
+    import hashlib
+
+    board = Path(board_file)
+    name = f"{board.stem}_drc_violations.json"
+    if operating_mode() == "write":
+        return board.parent / name
+    digest = hashlib.sha256(str(board.resolve()).encode("utf-8")).hexdigest()[:12]
+    return report_dir() / f"{board.stem}-{digest}_drc_violations.json"
